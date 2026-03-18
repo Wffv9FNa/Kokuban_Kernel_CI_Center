@@ -249,7 +249,7 @@ pub fn handle_build(
     let setup_url = match branch.as_str() {
         "resukisu" => Some((
             "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh",
-            "builtin",
+            "version_file",
         )),
         "mksu" => Some((
             "https://raw.githubusercontent.com/5ec1cff/KernelSU/main/kernel/setup.sh",
@@ -263,7 +263,20 @@ pub fn handle_build(
     };
 
     if let Some((url, arg)) = setup_url {
-        let cmd = format!("curl -LSs '{}' | bash -s {}", url, arg);
+        let effective_arg = if arg == "version_file" {
+            let version_file = kernel_source_path.join("KERNELSU_VERSION.txt");
+            if version_file.exists() {
+                fs::read_to_string(&version_file)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            } else {
+                String::new()
+            }
+        } else {
+            arg.to_string()
+        };
+        let cmd = format!("curl -LSs '{}' | bash -s {}", url, effective_arg);
         run_cmd(&["bash", "-c", &cmd], Some(&kernel_source_path), false)?;
     }
 
