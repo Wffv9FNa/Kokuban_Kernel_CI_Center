@@ -68,7 +68,7 @@
       "clang-tools/linux-x86/bin",
       "kernel-build-tools/linux-x86/bin"
     ],
-    "anykernel_repo": "https://github.com/YuzakiKokuban/AnyKernel3.git",
+    "anykernel_repo": "https://github.com/Wffv9FNa/AnyKernel3.git",
     "anykernel_branch": "sun",
     "zip_name_prefix": "S25_Kernel"
   },
