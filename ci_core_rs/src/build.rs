@@ -280,6 +280,47 @@ pub fn handle_build(
         run_cmd(&["bash", "-c", &cmd], Some(&kernel_source_path), false)?;
     }
 
+    // Xposed/LSPosed inline hooking (Dobby) needs SELinux execmem (anonymous RWX trampoline) and
+    // execmod (in-place libart .text patch). Samsung RKP freezes the policydb post-boot, so inject
+    // these at ReSukiSU's load-time rule pass (apply_kernelsu_rules). Fail loudly if the anchor is
+    // gone - never build a kernel that silently lacks the grant.
+    if branch.as_str() == "resukisu" {
+        let rules_path = kernel_source_path.join("KernelSU/kernel/selinux/rules.c");
+        if !rules_path.exists() {
+            panic!("[xposed-sepolicy] {} missing after setup.sh", rules_path.display());
+        }
+        let content = fs::read_to_string(&rules_path)
+            .unwrap_or_else(|e| panic!("[xposed-sepolicy] read {} failed: {}", rules_path.display(), e));
+        let anchor =
+            "    ksu_allow(db, \"system_server\", KERNEL_SU_DOMAIN, \"process\", \"sigkill\");";
+        if !content.contains(anchor) {
+            panic!("[xposed-sepolicy] anchor not found in rules.c - ReSukiSU layout changed; \
+                    refusing to build without the execmem/execmod grant");
+        }
+        if !content.contains("XPOSED inline-hook grant") {
+            let domains = [
+                "system_server", "zygote", "app_zygote", "platform_app", "priv_app",
+                "untrusted_app", "untrusted_app_25", "untrusted_app_27", "untrusted_app_29",
+                "untrusted_app_30", "untrusted_app_32", "isolated_app", "ephemeral_app",
+            ];
+            let mut grant = String::from(
+                "\n    // XPOSED inline-hook grant: Dobby (LSPosed/Vector) execmem + libart execmod\n",
+            );
+            for d in domains.iter() {
+                grant.push_str(&format!(
+                    "    ksu_allow(db, \"{0}\", \"{0}\", \"process\", \"execmem\");\n", d));
+            }
+            for d in domains.iter() {
+                grant.push_str(&format!(
+                    "    ksu_allow(db, \"{}\", ALL, \"file\", \"execmod\");\n", d));
+            }
+            let patched = content.replace(anchor, &format!("{}{}", anchor, grant));
+            fs::write(&rules_path, patched)
+                .unwrap_or_else(|e| panic!("[xposed-sepolicy] write {} failed: {}", rules_path.display(), e));
+            println!("[xposed-sepolicy] injected execmem/execmod grants into rules.c");
+        }
+    }
+
     if target_soc_str == "sm8850" {
         let setlocalversion_path = kernel_source_path.join("scripts/setlocalversion");
         if setlocalversion_path.exists() {
