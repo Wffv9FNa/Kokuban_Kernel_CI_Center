@@ -314,10 +314,34 @@ pub fn handle_build(
                 grant.push_str(&format!(
                     "    ksu_allow(db, \"{}\", ALL, \"file\", \"execmod\");\n", d));
             }
+            // LSPosed's own /data/adb/modules/zygisk_lsposed/sepolicy.rule never loads on this
+            // device (RKP freezes the policydb post-boot), leaving the manager "Partially activated"
+            // and dex2oat failing with EACCES. Bake the same rules in here at load time instead.
+            grant.push_str(
+                "    // LSPosed sepolicy.rule (kernel-baked; module sepolicy.rule is a no-op under RKP)\n\
+                 \x20   ksu_type(db, \"xposed_file\", \"file_type\");\n\
+                 \x20   ksu_typeattribute(db, \"xposed_file\", \"mlstrustedobject\");\n\
+                 \x20   ksu_type(db, \"xposed_data\", \"file_type\");\n\
+                 \x20   ksu_typeattribute(db, \"xposed_data\", \"mlstrustedobject\");\n\
+                 \x20   ksu_allow(db, \"dex2oat\", \"dex2oat_exec\", \"file\", \"execute_no_trans\");\n\
+                 \x20   ksu_allow(db, \"dex2oat\", \"system_linker_exec\", \"file\", \"execute_no_trans\");\n\
+                 \x20   ksu_allow(db, \"shell\", \"shell\", \"dir\", \"write\");\n\
+                 \x20   ksu_allow(db, \"dex2oat\", \"xposed_file\", \"file\", ALL);\n\
+                 \x20   ksu_allow(db, \"dex2oat\", \"xposed_file\", \"dir\", ALL);\n\
+                 \x20   ksu_allow(db, \"installd\", \"xposed_file\", \"file\", ALL);\n\
+                 \x20   ksu_allow(db, \"installd\", \"xposed_file\", \"dir\", ALL);\n\
+                 \x20   ksu_allow(db, \"isolated_app\", \"xposed_file\", \"file\", ALL);\n\
+                 \x20   ksu_allow(db, \"isolated_app\", \"xposed_file\", \"dir\", ALL);\n\
+                 \x20   ksu_allow(db, \"shell\", \"xposed_file\", \"file\", ALL);\n\
+                 \x20   ksu_allow(db, \"shell\", \"xposed_file\", \"dir\", ALL);\n\
+                 \x20   ksu_allow(db, \"dex2oat\", \"unlabeled\", \"file\", ALL);\n\
+                 \x20   ksu_allow(db, ALL, \"xposed_data\", \"file\", ALL);\n\
+                 \x20   ksu_allow(db, ALL, \"xposed_data\", \"dir\", ALL);\n",
+            );
             let patched = content.replace(anchor, &format!("{}{}", anchor, grant));
             fs::write(&rules_path, patched)
                 .unwrap_or_else(|e| panic!("[xposed-sepolicy] write {} failed: {}", rules_path.display(), e));
-            println!("[xposed-sepolicy] injected execmem/execmod grants into rules.c");
+            println!("[xposed-sepolicy] injected execmem/execmod + LSPosed sepolicy (xposed_file/xposed_data, dex2oat) grants into rules.c");
         }
     }
 
